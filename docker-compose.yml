@@ -1,0 +1,122 @@
+# version: "3.9"
+
+# services:
+#   api:
+#     build: ./server
+#     ports:
+#       - "8080:8080"
+#     environment:
+#       NODE_ENV: development
+#       PORT: 8080
+#       REDIS_HOST: redis
+#       REDIS_PORT: 6379
+#       CLICKHOUSE_HOST: clickhouse
+#       CLICKHOUSE_PORT: 8123
+#     volumes:
+#       - ./server:/app
+#       - /app/node_modules
+#     depends_on:
+#       - redis
+#       - clickhouse
+
+#   redis:
+#     image: redis:latest
+#     ports:
+#       - "6379:6379"
+
+#   clickhouse:
+#     image: clickhouse/clickhouse-server
+#     ports:
+#       - "8123:8123"
+#       - "9000:9000"
+#     volumes:
+#       - clickhouse_data:/var/lib/clickhouse
+
+# volumes:
+#   clickhouse_data:
+
+
+
+# version: "3.9"
+
+# services:
+#   api:
+#     build: ./server
+#     ports:
+#       - "8080:8080"
+#     environment:
+#       NODE_ENV: development
+#       PORT: 8080
+#       REDIS_HOST: redis
+#       REDIS_PORT: 6379
+#       CLICKHOUSE_HOST: clickhouse
+#       CLICKHOUSE_PORT: 8123
+#     volumes:
+#       - ./server:/app
+#       - /app/node_modules
+#     depends_on:
+#       - redis
+#       - clickhouse
+
+#   redis:
+#     image: redis:latest
+#     ports:
+#       - "6379:6379"
+
+#   clickhouse:
+#     image: clickhouse/clickhouse-server
+#     ports:
+#       - "8123:8123"
+#       - "9000:9000"
+#     volumes:
+#       - clickhouse_data:/var/lib/clickhouse
+
+# volumes:
+#   clickhouse_data:
+version: "3.9"
+
+services:
+  api:
+    build: ./server
+    ports:
+      - "8080:8080"
+    environment:
+      NODE_ENV: development
+      PORT: 8080
+
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_DB: ude
+      CLICKHOUSE_USER: ude_user
+      CLICKHOUSE_PASSWORD: supersecret123
+
+    volumes:
+      - ./server:/app            # mount code, so edits reflect immediately
+      - /app/node_modules        # preserve node_modules created in image
+
+    depends_on:
+      - redis
+      - clickhouse
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9000:9000"   # native TCP interface (if you want to use it)
+    environment:
+      CLICKHOUSE_DB: ude
+      CLICKHOUSE_USER: ude_user
+      CLICKHOUSE_PASSWORD: supersecret123
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+volumes:
+  clickhouse_data:

@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import trackRoutes from "./routes/track.routes.js";
 import identifyRoutes from "./routes/identify.routes.js";
+import eventsRoutes from "./routes/events.routes.js";
+import { initClickHouse } from "./services/clickhouseInit.js";
 
 const app = express();
 const PORT = process.env.PORT || 8080; // you chose 8080 ✅
@@ -27,6 +29,11 @@ app.get("/health", (req, res) => {
 // ============== UDE ROUTES ==============
 app.use("/track", trackRoutes);      // POST /track
 app.use("/identify", identifyRoutes); // POST /identify
+
+
+app.use("/events", eventsRoutes);
+await initClickHouse();
+
 
 // ============== START SERVER ==============
 app.listen(PORT, () => {

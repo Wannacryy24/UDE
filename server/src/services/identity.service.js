@@ -1,14 +1,16 @@
+// server/src/services/identity.service.js
 import { randomUUID } from "crypto";
+import redis from "./redisClient.js";
 
-// profileId -> profile object
-const profiles = new Map();
+const PROFILE_KEY_PREFIX = "profile:";
+const ID_INDEX_PREFIX = "id:"; // e.g. id:user_id:123 -> profileId
 
-// "type:value" -> profileId
-// e.g. "user_id:123" -> "profile-uuid-1"
-const identifierIndex = new Map();
+function buildProfileKey(profileId) {
+  return `${PROFILE_KEY_PREFIX}${profileId}`;
+}
 
-function buildKey(type, value) {
-  return `${type}:${value}`;
+function buildIdKey(type, value) {
+  return `${ID_INDEX_PREFIX}${type}:${value}`;
 }
 
 /**
@@ -16,18 +18,22 @@ function buildKey(type, value) {
  * - identifiers: { user_id, email, anonymous_id, ... }
  * - traits: { name, city, plan, ... } (optional)
  */
-export function upsertProfile(identifiers = {}, traits = {}) {
+export async function upsertProfile(identifiers = {}, traits = {}) {
   // 1. Collect all non-empty identifiers
   const idEntries = Object.entries(identifiers).filter(
     ([, value]) => value !== undefined && value !== null && value !== ""
   );
 
+  if (idEntries.length === 0) {
+    throw new Error("At least one identifier is required");
+  }
+
   let profileId = null;
 
   // 2. Try to find an existing profile via any identifier
   for (const [type, value] of idEntries) {
-    const key = buildKey(type, value);
-    const existingProfileId = identifierIndex.get(key);
+    const key = buildIdKey(type, value);
+    const existingProfileId = await redis.get(key);
     if (existingProfileId) {
       profileId = existingProfileId;
       break;
@@ -39,22 +45,36 @@ export function upsertProfile(identifiers = {}, traits = {}) {
     profileId = randomUUID();
   }
 
-  // 4. Get or create the profile object
-  let profile = profiles.get(profileId);
+  const profileKey = buildProfileKey(profileId);
+
+  // 4. Get or init profile object
+  let profile = null;
+  const raw = await redis.get(profileKey);
+
+  if (raw) {
+    try {
+      profile = JSON.parse(raw);
+    } catch (err) {
+      console.warn("⚠️ Failed to parse profile JSON for", profileKey, err);
+    }
+  }
+
   if (!profile) {
     profile = {
       profileId,
-      identifiers: {}, // e.g. { user_id: ["123"], email: ["a@b.com"], ... }
+      identifiers: {}, // e.g. { user_id: ["123"], email: ["a@b.com"] }
       traits: {},
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
   }
 
-  // 5. Update identifierIndex + profile.identifiers
+  // 5. Update identifier index + profile.identifiers
   for (const [type, value] of idEntries) {
-    const key = buildKey(type, value);
-    identifierIndex.set(key, profileId); // overwrite old mapping = simple "merge"
+    const idKey = buildIdKey(type, value);
+
+    // This overwrites old mapping if it pointed to some other profileId → simple merge behavior
+    await redis.set(idKey, profileId);
 
     if (!profile.identifiers[type]) {
       profile.identifiers[type] = [];
@@ -73,20 +93,21 @@ export function upsertProfile(identifiers = {}, traits = {}) {
   }
 
   profile.updatedAt = new Date().toISOString();
-  profiles.set(profileId, profile);
+
+  // 7. Save profile back to Redis
+  await redis.set(profileKey, JSON.stringify(profile));
 
   return { profileId, profile };
 }
 
-// Optional helper: fetch profile for debugging
-export function getProfileById(profileId) {
-  return profiles.get(profileId) || null;
-}
+// Fetch single profile by id (for future dashboard / debugging)
+export async function getProfileById(profileId) {
+  const raw = await redis.get(buildProfileKey(profileId));
+  if (!raw) return null;
 
-// Optional debug dump (for future debugging or admin APIs)
-export function debugIdentityState() {
-  return {
-    profiles: Array.from(profiles.values()),
-    identifierIndex: Array.from(identifierIndex.entries())
-  };
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }

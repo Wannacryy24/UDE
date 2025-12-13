@@ -28,10 +28,29 @@ export async function initClickHouse() {
     `
     });
 
+    // 3️⃣ Create PROFILES table
+    await clickhouse.command({
+      query: `
+        CREATE TABLE IF NOT EXISTS ude.profiles (
+          profile_id String,
+          identifiers String,
+          traits String,
+          created_at DateTime,
+          updated_at DateTime
+        )
+        ENGINE = ReplacingMergeTree(updated_at)
+        ORDER BY profile_id;
+      `
+    });
+
     console.log("✅ ClickHouse table is ready!");
   } catch (err) {
     console.error("❌ ClickHouse init error:", err);
   }
 }
 
+
+// Redis = fast identity resolution
+
+// ClickHouse = permanent storage + analytics
 

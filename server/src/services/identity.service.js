@@ -97,6 +97,26 @@ export async function upsertProfile(identifiers = {}, traits = {}) {
   // 7. Save profile back to Redis
   await redis.set(profileKey, JSON.stringify(profile));
 
+  try {
+    await clickhouse.insert({
+      table: "profiles",
+      format: "JSONEachRow",
+      values: [
+        {
+          profile_id: profileId,
+          identifiers: JSON.stringify(profile.identifiers),
+          traits: JSON.stringify(profile.traits),
+          created_at: profile.createdAt,
+          updated_at: profile.updatedAt
+        }
+      ]
+    });
+
+    console.log("📝 Profile upserted into ClickHouse:", profileId);
+  } catch (err) {
+    console.error("❌ Failed to insert profile into ClickHouse:", err);
+  }
+
   return { profileId, profile };
 }
 

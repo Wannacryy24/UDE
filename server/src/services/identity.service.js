@@ -1,6 +1,7 @@
 // server/src/services/identity.service.js
 import { randomUUID } from "crypto";
 import redis from "./redisClient.js";
+import { clickhouse } from "./clickhouseClient.js";
 
 const PROFILE_KEY_PREFIX = "profile:";
 const ID_INDEX_PREFIX = "id:"; // e.g. id:user_id:123 -> profileId
@@ -64,8 +65,8 @@ export async function upsertProfile(identifiers = {}, traits = {}) {
       profileId,
       identifiers: {}, // e.g. { user_id: ["123"], email: ["a@b.com"] }
       traits: {},
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      created_at: profile.createdAt.slice(0, 19).replace("T", " "),
+      updated_at: profile.updatedAt.slice(0, 19).replace("T", " "),
     };
   }
 
@@ -99,7 +100,7 @@ export async function upsertProfile(identifiers = {}, traits = {}) {
 
   try {
     await clickhouse.insert({
-      table: "profiles",
+      table: "ude.profiles",
       format: "JSONEachRow",
       values: [
         {

@@ -1,106 +1,37 @@
-// // server/src/controllers/track.controller.js
-// import { upsertProfile } from "../services/identity.service.js";
-
-// // TEMP in-memory events store (we'll move this to ClickHouse later)
-// const events = [];
-
-// export async function handleTrack(req, res) {
-//   try {
-//     const { event, identifiers, properties = {}, context = {}, timestamp } = req.body || {};
-
-//     if (!event || !identifiers || Object.keys(identifiers).length === 0) {
-//       return res.status(400).json({
-//         success: false,
-//         error: "event and at least one identifier are required"
-//       });
-//     }
-
-//     // Resolve or create a profile for this event
-//     const { profileId } = await upsertProfile(identifiers, {});
-
-//     const eventTimestamp = timestamp
-//       ? new Date(timestamp).toISOString()
-//       : new Date().toISOString();
-
-//     const eventRecord = {
-//       id: events.length + 1,
-//       event,
-//       profileId,
-//       identifiers,
-//       properties,
-//       context,
-//       timestamp: eventTimestamp
-//     };
-
-//     events.push(eventRecord);
-
-//     console.log("📩 /track event:", eventRecord);
-
-//     return res.json({
-//       success: true,
-//       profileId,
-//       eventId: eventRecord.id
-//     });
-//   } catch (err) {
-//     console.error("❌ Error in /track:", err);
-//     return res.status(500).json({ success: false, error: "Internal server error" });
-//   }
-// }
-
-
-
-
 // server/src/controllers/track.controller.js
+
 import { upsertProfile } from "../services/identity.service.js";
 import { clickhouse } from "../services/clickhouseClient.js";
+import { registerEvent } from "../services/eventRegistry.service.js";
+import { validateAndNormalizeEvent } from "../services/eventContract.service.js";
 
-// TEMP in-memory events store (still keeping this for quick debugging)
-const events = [];
-
+/**
+ * POST /track
+ * Ingests an event, resolves identity, writes event to ClickHouse,
+ * updates schema registry
+ */
 export async function handleTrack(req, res) {
   try {
-    const {
-      event,
-      identifiers,
-      properties = {},
-      context = {},
-      timestamp,
-    } = req.body || {};
+    // 1️⃣ Validate + Normalize request payload
+    const result = validateAndNormalizeEvent(req.body);
 
-    if (!event || !identifiers || Object.keys(identifiers).length === 0) {
+    if (!result.valid) {
       return res.status(400).json({
         success: false,
-        error: "event and at least one identifier are required",
+        errors: result.errors,
       });
     }
 
-    // 1️⃣ Resolve or create a profile for this event (Redis)
+    const { event, identifiers, properties, context, timestamp } = result.event;
+
+    // 2️⃣ Resolve or Create Profile — Redis + Insert latest state into ClickHouse
     const { profileId } = await upsertProfile(identifiers, {});
 
-    // 2️⃣ Build a clean timestamp
-    const eventTimestamp = timestamp
-      ? new Date(timestamp)
-      : new Date();
+    // 3️⃣ Normalize timestamp into ClickHouse-required DateTime format
+    const eventTime = timestamp ? new Date(timestamp) : new Date();
+    const chTimestamp = eventTime.toISOString().slice(0, 19).replace("T", " ");
 
-    // ClickHouse wants "YYYY-MM-DD HH:MM:SS" format for DateTime
-    const chTimestamp = eventTimestamp.toISOString().slice(0, 19).replace("T", " ");
-
-    // 3️⃣ Build event record (for logging + in-memory array)
-    const eventRecord = {
-      id: events.length + 1,
-      event,
-      profileId,
-      identifiers,
-      properties,
-      context,
-      timestamp: eventTimestamp.toISOString(),
-    };
-
-    events.push(eventRecord);
-
-    console.log("📩 /track event (in-memory):", eventRecord);
-
-    // 4️⃣ Insert into ClickHouse
+    // 4️⃣ Insert Event Row → ClickHouse (raw, immutable)
     await clickhouse.insert({
       table: "events",
       format: "JSONEachRow",
@@ -116,16 +47,19 @@ export async function handleTrack(req, res) {
       ],
     });
 
-    console.log("📝 /track event inserted into ClickHouse");
+    // 5️⃣ Update Soft Schema Registry (optional, non-blocking)
+    await registerEvent(event, properties);
 
-    // 5️⃣ Respond to SDK
+    // 6️⃣ Respond back to SDK
     return res.json({
       success: true,
       profileId,
-      eventId: eventRecord.id,
     });
   } catch (err) {
-    console.error("❌ Error in /track:", err);
-    return res.status(500).json({ success: false, error: "Internal server error" });
+    console.error("❌ /track error:", err);
+    return res.status(500).json({
+      success: false,
+      error: "internal server error",
+    });
   }
 }

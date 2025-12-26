@@ -1,18 +1,19 @@
+// server/src/services/clickhouseInit.js
 import { clickhouse } from "./clickhouseClient.js";
 
 function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(r => setTimeout(r, ms));
 }
 
 export async function initClickHouse(retries = 10) {
-  for (let i = 1; i <= retries; i++) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      console.log(`🗃️ Trying to connect to ClickHouse (attempt ${i})...`);
+      console.log(`🗃️ Connecting to ClickHouse (attempt ${attempt})`);
 
-      await clickhouse.command({
-        query: `CREATE DATABASE IF NOT EXISTS ude`
-      });
+      // 1️⃣ Database
+      await clickhouse.command({ query: `CREATE DATABASE IF NOT EXISTS ude` });
 
+      // 2️⃣ Events Table
       await clickhouse.command({
         query: `
           CREATE TABLE IF NOT EXISTS ude.events (
@@ -28,6 +29,7 @@ export async function initClickHouse(retries = 10) {
         `
       });
 
+      // 3️⃣ Profiles Table
       await clickhouse.command({
         query: `
           CREATE TABLE IF NOT EXISTS ude.profiles (
@@ -42,13 +44,46 @@ export async function initClickHouse(retries = 10) {
         `
       });
 
-      console.log("✅ ClickHouse is ready!");
+      // 4️⃣ Event Registry Table
+      await clickhouse.command({
+        query: `
+          CREATE TABLE IF NOT EXISTS ude.event_registry (
+            event_name String,
+            property_name String,
+            property_type String,
+            first_seen_at DateTime,
+            last_seen_at DateTime,
+            status String
+          )
+          ENGINE = ReplacingMergeTree(last_seen_at)
+          ORDER BY (event_name, property_name);
+        `
+      });
+
+      // 5️⃣ Schema Conflict Table
+      await clickhouse.command({
+        query: `
+          CREATE TABLE IF NOT EXISTS ude.event_property_conflicts (
+            event_name String,
+            property_name String,
+            expected_type String,
+            received_type String,
+            first_seen_at DateTime,
+            last_seen_at DateTime,
+            count UInt32
+          )
+          ENGINE = ReplacingMergeTree(last_seen_at)
+          ORDER BY (event_name, property_name);
+        `
+      });
+
+      console.log("✅ ClickHouse initialized!");
       return;
     } catch (err) {
-      console.warn("⏳ ClickHouse not ready yet...");
+      console.warn("⏳ ClickHouse not ready yet… retrying");
       await sleep(2000);
     }
   }
 
-  console.error("❌ ClickHouse failed to initialize after retries");
+  console.error("❌ ERROR — failed to init ClickHouse after retries");
 }

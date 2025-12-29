@@ -1455,3 +1455,301 @@ If you want, next I can:
 
 
 	
+
+Date 26Dec2025
+Before ANY dashboards, you need a strong ingestion core:
+
+1️⃣ Make schema API complete
+
+Expose backend endpoints so FE can rely on backend:
+	•	/schema/events  (✔ already)
+	•	/schema/events/:event  (✔ already)
+	•	/schema/conflicts  (❌ must build)
+	•	/schema/properties/global  (❌ must build — list all properties across all events)
+
+2️⃣ Fix ingestion correctness
+
+Add:
+	•	Reserved-key enforcement (blocks SDK from sending user_id inside properties)
+	•	Strict timestamp normalization
+	•	Required event structure validation
+	•	Reject events when contract violated (not just log)
+
+3️⃣ Add batching & async queue
+
+Current → /track inserts DB synchronously → slow + unsafe
+Upgrade to:
+			SDK ---> POST /track/batch  (max 100)
+					|
+				queue (Redis list or Kafka mini)
+					|
+				worker ---> ClickHouse bulk insert
+4️⃣ Add enrichment
+
+Real UDE adds:
+
+country
+device
+browser
+os
+ip
+referrer
+session_id
+page_duration
+
+→ must auto-extract inside backend, not sent by SDK.
+
+5️⃣ Add dead-letter storage
+
+When schema mismatch fails → event MUST NOT be lost
+Store:
+
+ude.dead_events
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Which one do you want to do NEXT?
+
+A️⃣ Auto-Capture Context (device, ip, page, referrer)
+B️⃣ Enrich Profile Traits from Events (plan, price, etc.)
+C️⃣ Add Analytics APIs (active users, funnels, cohorts)
+
+
+
+
+2
+🔹 A — Batch ingestion /track/batch
+Send 100 events at once — performance + SDK-like
+
+🔹 B — Async queue worker
+Insert events into Redis first → ClickHouse async
+
+🔹 C — Enrichment
+Auto extract IP → geo → device → OS → browser
+
+
+Layer
+Status
+Event ingestion (/track)
+✔ working
+Profile merge (Redis + ClickHouse)
+✔ working
+Schema tracking
+✔ now stable
+Contract validation
+⚠️ basic only
+Conflicts logging
+⚠️ logged, NOT queryable
+Batching
+❌ missing
+Async pipeline
+❌ missing
+Event replay / retries
+❌ missing
+Dead letter queue
+❌ missing
+Real-time enrichment (geo, device)
+❌ missing
+Rate limiting
+❌ missing
+Authentication for SDK
+❌ missing
+Multi-tenant support
+❌ missing
+
+
+Reply with ONE letter:
+
+A — Build /schema/conflicts API + UI-ready output
+→ So you can see which SDKs are sending wrong data
+
+B — Add “reserved keys” enforcement on properties
+→ Prevent SDKs from sending user_id or user_email inside properties
+
+C — Begin “Auto-Segments” (e.g., premium users, users from India)
+→ First product analytics insights
+
+D — Add batching endpoint /track/batch for 50K events/sec
+→ Makes ingestion production-g
+
+
+
+
+
+
+
+
+🧭 MASTER ROADMAP — Full UDE (User-Data-Engine) System
+
+Final goal: A platform equivalent to Mixpanel + Segment + Rudderstack (self-hosted analytics + profiles + ingestion + schema validation + dashboards).
+
+⸻
+
+✅ 1️⃣ Phase — Core Data Ingestion (DONE by you)
+
+Already built:
+✔ POST /track – store event
+✔ POST /identify – update traits & identities
+✔ Redis profile merge / anonymous → known
+✔ ClickHouse tables – events, profiles
+✔ Auto-schema registry — event_registry
+✔ Schema mismatch warning logs
+✔ /schema/events, /schema/:event — schema explorer
+✔ Unique counts, by-day, latest events API
+
+🔥 This is enough to collect millions of events — foundation is complete.
+
+⸻
+
+🟧 2️⃣ Phase — Schema Contract System (PARTIALLY DONE)
+
+Goal = prevent garbage data, enforce clean data contracts.
+
+Already done:
+✔ Track schema of every event field
+✔ Detect type mismatches
+
+Still missing (must build):
+Feature                          Description
+Schema enforcement toggle        system-wide flag — if ON → reject bad events
+Property allow/block list        Choose which fields are allowed
+Event approval workflow          New events appear as “pending” until approved
+Schema history                   Store versions + who changed what
+Validation rules                 min-max length, enum values, regex, etc.
+
+
+APIs to add:
+POST /schema/settings      { enforce: true }
+POST /schema/approve       { event, property, type }
+POST /schema/block         { event, property }
+GET  /schema/pending
+
+
+
+🟦 3️⃣ Phase — Profiles System Expansion (NOT DONE YET)
+
+Goal = Real-time user profile like Mixpanel People Analytics
+
+To build:
+
+
+Feature                                  Why
+Profile timeline                    GET /profiles/:id/timeline
+Profile events summary              first seen, last seen, top actions
+Computed fields                     LTV, session_count, avg spend
+Identity merge strategies           map user_id + email + device_id
+Profile export APIs                 CSV / webhook / sync to external tools
+
+Extra ClickHouse tables to add:
+profile_sessions
+profile_aggregates
+
+
+🟨 4️⃣ Phase — Analytics Engine (NOT DONE)
+
+Goal = provide Mixpanel UI charts programmatically
+
+Analytics                                Why
+Funnels (signup → trial → pay)           Conversion
+Cohorts (users who did X but not Y)      Retention
+Retention curves (D1, D7, W4)            Health
+Group analytics (company_id → B2B SaaS)  B2B use case
+Revenue tracking.                        MRR / ARPU
+
+APIs to build:
+
+GET /analytics/funnel?steps=signup,trial_start,checkout
+GET /analytics/retention?event=login&period=7d
+GET /analytics/revenue/mrr
+
+
+
+
+
+🟩 5️⃣ Phase — Dashboard UI (NOT STARTED)
+
+A React dashboard for debugging & analytics
+
+Screens to build:
+1️⃣ Live Event Stream
+2️⃣ Schema Explorer (show mismatches)
+3️⃣ Profile Viewer (timeline + traits)
+4️⃣ Funnels dashboard
+5️⃣ Settings (schema enforcement toggle)
+
+This is where product becomes real.
+
+⸻
+
+🟪 6️⃣ Phase — SDKs (To make platform usable by others)
+
+What to build
+
+SDK                                    Why
+JavaScript browser SDK             embed in websites
+Node SDK                           backend apps
+React hook: useAnalytics()         easy frontend usage
+Later: Swift + Kotlin mobile sdk.  apps
+
+
+Example browser code:
+
+import UDE from "@ude/js"
+
+UDE.track("signup", { plan:"pro" }, { user_id: 123 })
+
+🟥 7️⃣ Phase — Scalability (Optional, Later)
+
+Once system handles 100M events/month
+
+Add:Component                        Why
+Kafka ingestion buffer             async batching
+Redis Stream for retries           reliability
+ClickHouse Materialized Views      aggregated tables
+TTL policies                       auto delete 1-year old events
+Multi-tenant / RBAC                SaaS version
+
+
+🔁 TL;DR – Everything on One List (Chronological Build Order)
+
+📌 DONE
+	•	Event ingestion
+	•	Identity resolution
+	•	ClickHouse events/profiles
+	•	Event registry + schema tracking
+	•	Conflicts logging
+
+🧱 NEXT BUILD
+(1) Schema enforcement system
+(2) Profiles timeline & aggregates
+(3) Analytics APIs (funnels/retention)
+(4) React dashboard UI
+(5) Developer SDKs
+(6) Scalability upgrades
+
+
+
+⸻
+
+🧠 Your Next Task (Immediate)
+
+👉 Finish schema enforcement before anything else
+Because without enforcing contract → everything downstream breaks.

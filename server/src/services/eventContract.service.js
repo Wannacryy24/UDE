@@ -1,6 +1,4 @@
-// server/src/services/eventContract.service.js
-
-const RESERVED_PROPERTY_KEYS = new Set([
+const RESERVED = new Set([
   "profile_id",
   "distinct_id",
   "user_id",
@@ -8,42 +6,23 @@ const RESERVED_PROPERTY_KEYS = new Set([
   "updated_at"
 ]);
 
-function normalizeEventName(event) {
-  return event
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_");
-}
+const normalizeEventName = (e) =>
+  e.trim().toLowerCase().replace(/\s+/g, "_");
 
-function normalizeTimestamp(ts) {
-  if (!ts) return new Date();
-  if (typeof ts === "number") return new Date(ts * 1000);
-  return new Date(ts);
-}
+const normalizeTimestamp = (t) => {
+  if (!t) return new Date();
+  if (typeof t === "number") return new Date(t * 1000);
+  return new Date(t);
+};
 
 export function validateAndNormalizeEvent(payload = {}) {
   const errors = [];
 
   if (!payload.event || typeof payload.event !== "string")
-    errors.push("event is required and must be a string");
+    errors.push("event must be non-empty string");
 
-  if (!payload.identifiers || typeof payload.identifiers !== "object" ||
-      Object.keys(payload.identifiers).length === 0)
-    errors.push("identifiers must contain at least one value");
-
-  if (payload.properties && typeof payload.properties !== "object")
-    errors.push("properties must be an object");
-
-  if (payload.context && typeof payload.context !== "object")
-    errors.push("context must be an object");
-
-  let parsedTimestamp = null;
-  if (payload.timestamp) {
-    const t = new Date(payload.timestamp);
-    if (isNaN(t.getTime()))
-      errors.push("timestamp must be ISO string or UNIX MS");
-    else parsedTimestamp = t;
-  }
+  if (!payload.identifiers || Object.keys(payload.identifiers).length === 0)
+    errors.push("identifiers must include at least 1 identifier");
 
   if (errors.length) return { valid: false, errors };
 
@@ -52,18 +31,19 @@ export function validateAndNormalizeEvent(payload = {}) {
     identifiers: payload.identifiers,
     properties: payload.properties ?? {},
     context: payload.context ?? {},
-    timestamp: parsedTimestamp || normalizeTimestamp(payload.timestamp)
+    timestamp: normalizeTimestamp(payload.timestamp)
   };
 
+  // protect reserved keys
   const unsafe = {};
-  for (const key of Object.keys(normalized.properties)) {
-    if (RESERVED_PROPERTY_KEYS.has(key)) {
-      unsafe[key] = normalized.properties[key];
-      delete normalized.properties[key];
+  for (const k of Object.keys(normalized.properties)) {
+    if (RESERVED.has(k)) {
+      unsafe[k] = normalized.properties[k];
+      delete normalized.properties[k];
     }
   }
   if (Object.keys(unsafe).length)
-    normalized.context._unsafe = unsafe;
+    normalized.context._unsafe_reserved = unsafe;
 
   return { valid: true, event: normalized };
 }

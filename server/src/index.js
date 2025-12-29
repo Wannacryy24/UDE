@@ -7,6 +7,8 @@ import { initClickHouse } from "./services/clickhouseInit.js";
 import eventsStatsRoutes from "./routes/events.stats.routes.js";
 import profilesRoutes from "./routes/profiles.routes.js";
 import schemaRoutes from "./routes/schema.routes.js";
+import schemaConflictsRoutes from "./routes/schema.conflicts.routes.js";
+
 
 const app = express();
 const PORT = process.env.PORT || 8080; // you chose 8080 ✅
@@ -35,14 +37,16 @@ app.use("/identify", identifyRoutes); // POST /identify
 
 
 app.use("/events", eventsRoutes);
-await initClickHouse();
-
 app.use("/events/stats", eventsStatsRoutes);
-
-// search by profile id 
 app.use("/profiles", profilesRoutes);
 
+
+
 app.use("/schema", schemaRoutes)
+app.use("/schema/conflicts", schemaConflictsRoutes); 
+
+
+await initClickHouse();
 
 // ============== START SERVER ==============
 app.listen(PORT, () => {

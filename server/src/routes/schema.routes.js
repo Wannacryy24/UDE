@@ -2,97 +2,45 @@
 import { Router } from "express";
 import { clickhouse } from "../services/clickhouseClient.js";
 
-const router = Router();
+const r = Router();
 
-
-/**
- * GET /schema/events
- * → List all known events
- */
-
-router.get("/events", async (req, res) => {
+// list all event names
+r.get("/events", async (_, res) => {
   try {
-    const rows = await clickhouse.query({
+    const q = await clickhouse.query({
       query: `
-        SELECT DISTINCT event_name
+        SELECT DISTINCT event AS event_name
         FROM ude.event_registry
-        ORDER BY event_name
+        ORDER BY event ASC
       `,
       format: "JSONEachRow"
     });
 
-    const events = await rows.json();
-    res.json({
-      success: true,
-      events: events.map(r => r.event_name)
-    });
+    res.json({ success: true, events: await q.json() });
   } catch (err) {
-    console.error("❌ GET /schema/events error:", err);
-    res.status(500).json({ success: false });
+    console.error("❌ /schema/events error", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-/**
- * GET /schema/events/:event
- * → Show all properties of a given event
- */
-router.get("/events/:event", async (req, res) => {
+// list schema for one event
+r.get("/conflicts", async (_, res) => {
   try {
-    const event = req.params.event;
-
-    const rows = await clickhouse.query({
+    const q = await clickhouse.query({
       query: `
-        SELECT property_name, property_type, first_seen_at, last_seen_at, status
-        FROM ude.event_registry
-        WHERE event_name = {event:String}
-        ORDER BY property_name
-      `,
-      query_params: { event },
-      format: "JSONEachRow"
-    });
-
-    const properties = await rows.json();
-
-    res.json({
-      success: true,
-      event,
-      properties
-    });
-  } catch (err) {
-    console.error("❌ GET /schema/events/:event error:", err);
-    res.status(500).json({ success: false });
-  }
-});
-
-/**
- * GET /schema/conflicts
- * → Return fields that changed type (data problems)
- */
-router.get("/conflicts", async (req, res) => {
-  try {
-    const rows = await clickhouse.query({
-      query: `
-        SELECT *
+        SELECT event, property, expected_type, received_type, count, last_seen_at
         FROM ude.event_property_conflicts
         ORDER BY last_seen_at DESC
-        LIMIT 100
+        LIMIT 200
       `,
       format: "JSONEachRow"
     });
 
-    const conflicts = await rows.json();
-
-    res.json({
-      success: true,
-      conflicts
-    });
+    res.json({ success: true, conflicts: await q.json() });
   } catch (err) {
-    console.error("❌ GET /schema/conflicts error:", err);
+    console.error("❌ /schema/conflicts error:", err);
     res.status(500).json({ success: false });
   }
 });
 
-export default router;
-
-
-
+export default r;

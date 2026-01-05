@@ -8,7 +8,7 @@ import eventsStatsRoutes from "./routes/events.stats.routes.js";
 import profilesRoutes from "./routes/profiles.routes.js";
 import schemaRoutes from "./routes/schema.routes.js";
 import schemaConflictsRoutes from "./routes/schema.conflicts.routes.js";
-
+import schemaPendingRoutes from "./routes/schema.pending.routes.js"
 
 const app = express();
 const PORT = process.env.PORT || 8080; // you chose 8080 ✅
@@ -44,6 +44,8 @@ app.use("/profiles", profilesRoutes);
 
 app.use("/schema", schemaRoutes)
 app.use("/schema/conflicts", schemaConflictsRoutes); 
+
+app.use("/schema/pending", schemaPendingRoutes);
 
 
 await initClickHouse();

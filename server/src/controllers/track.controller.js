@@ -2,6 +2,7 @@ import { upsertProfile } from "../services/identity.service.js";
 import { clickhouse } from "../services/clickhouseClient.js";
 import { registerEvent } from "../services/eventRegistry.service.js";
 import { validateAndNormalizeEvent } from "../services/eventContract.service.js";
+import { markPending } from "../services/schemaPending.service.js";
 
 export async function handleTrack(req, res) {
   try {
@@ -26,6 +27,27 @@ export async function handleTrack(req, res) {
         timestamp: ts
       }]
     });
+
+    for (const [prop, val] of Object.entries(properties)) {
+      const type = typeof val;
+
+      // check if exists in registry
+      const q = await clickhouse.query({
+        query: `
+      SELECT 1
+      FROM ude.event_registry
+      WHERE event = {e:String} AND property = {p:String}
+      LIMIT 1
+    `,
+        query_params: { e: name, p: prop },
+        format: "JSONEachRow"
+      });
+
+      const exists = (await q.json()).length > 0;
+      if (!exists) {
+        await markPending(name, prop, type);
+      }
+    }
 
     await registerEvent(name, properties);
 

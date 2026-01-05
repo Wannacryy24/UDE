@@ -1,16 +1,15 @@
+// server/src/services/clickhouseInit.js
 import { clickhouse } from "./clickhouseClient.js";
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function initClickHouse(retries = 10) {
   for (let i = 1; i <= retries; i++) {
     try {
       console.log(`🗃️ Try ClickHouse init (attempt ${i})...`);
 
-      // 1️⃣ Database
       await clickhouse.command({ query: `CREATE DATABASE IF NOT EXISTS ude` });
 
-      // 2️⃣ Events Table (Append-only raw)
       await clickhouse.command({
         query: `
           CREATE TABLE IF NOT EXISTS ude.events (
@@ -25,7 +24,6 @@ export async function initClickHouse(retries = 10) {
         `
       });
 
-      // 3️⃣ Profiles Table (latest state per profile)
       await clickhouse.command({
         query: `
           CREATE TABLE IF NOT EXISTS ude.profiles (
@@ -39,7 +37,6 @@ export async function initClickHouse(retries = 10) {
         `
       });
 
-      // 4️⃣ Event Registry — NEW Schema (no more property_type/status)
       await clickhouse.command({
         query: `
           CREATE TABLE IF NOT EXISTS ude.event_registry (
@@ -48,14 +45,13 @@ export async function initClickHouse(retries = 10) {
             expected_type String,
             last_seen_type String,
             mismatch_count UInt32,
-            first_seen_at DateTime DEFAULT now(),
-            last_seen_at DateTime DEFAULT now()
+            first_seen_at DateTime,
+            last_seen_at DateTime
           ) ENGINE = ReplacingMergeTree(last_seen_at)
           ORDER BY (event, property);
         `
       });
 
-      // 5️⃣ Optional Conflict Log (Keeps history)
       await clickhouse.command({
         query: `
           CREATE TABLE IF NOT EXISTS ude.event_property_conflicts (
@@ -63,11 +59,26 @@ export async function initClickHouse(retries = 10) {
             property String,
             expected_type String,
             received_type String,
-            first_seen_at DateTime DEFAULT now(),
-            last_seen_at DateTime DEFAULT now(),
+            first_seen_at DateTime,
+            last_seen_at DateTime,
             count UInt32
           ) ENGINE = ReplacingMergeTree(last_seen_at)
           ORDER BY (event, property, received_type);
+        `
+      });
+
+      /* 🆕 NEW — Pending approval table */
+      await clickhouse.command({
+        query: `
+          CREATE TABLE IF NOT EXISTS ude.event_schema_pending (
+            event String,
+            property String,
+            detected_type String,
+            first_seen_at DateTime DEFAULT now(),
+            last_seen_at DateTime DEFAULT now()
+          )
+          ENGINE = ReplacingMergeTree(last_seen_at)
+          ORDER BY (event, property);
         `
       });
 
@@ -81,6 +92,3 @@ export async function initClickHouse(retries = 10) {
 
   console.error("❌ Failed to init ClickHouse");
 }
-
-
-
